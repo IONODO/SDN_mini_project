@@ -2,7 +2,7 @@
 
 **Course Project – SDN Mininet Simulation (Orange Problem)**
 
-> An OpenFlow 1.3 controller built with Ryu that demonstrates the full lifecycle of flow rules — installation, traffic-based refresh, idle expiry, hard expiry, and explicit deletion — using a custom Mininet topology.
+> An OpenFlow 1.3 controller built with Ryu that demonstrates the full lifecycle of flow rules — installation, traffic-based refresh, idle expiry, and explicit deletion — using a custom Mininet topology.
 
 ---
 
@@ -14,7 +14,7 @@
 4. [How It Works](#how-it-works)
 5. [Setup & Execution](#setup--execution)
 6. [Test Scenarios](#test-scenarios)
-7. [Validation & Regression Testing](#validation--regression-testing)
+7. [Regression Testing](#regression-testing)
 8. [Proof of Execution](#proof-of-execution)
 9. [References](#references)
 
@@ -27,10 +27,10 @@ Traditional networks use static routing tables that require manual updates when 
 This project implements an **SDN Flow Rule Timeout Manager** that:
 
 - Installs per-flow rules dynamically via `packet_in` handling
-- Assigns **idle timeouts** (rules expire when no matching packets arrive for N seconds) and **hard timeouts** (rules expire unconditionally after N seconds regardless of traffic)
+- Assigns **idle timeouts** (rules expire when no matching packets arrive for N seconds) and **hard timeouts** (rules expire unconditionally after N seconds)
 - Captures **flow-removed events** to log lifecycle data
 - Enforces **security policies** by blocking specific hosts
-- Runs **regression tests** to prove that timeout behaviour is deterministic across multiple rounds
+- Runs **regression tests** to prove that timeout behaviour is deterministic
 
 ---
 
@@ -42,8 +42,8 @@ This project implements an **SDN Flow Rule Timeout Manager** that:
 │  timeout_manage_controller.py       │
 │                                     │
 │  ┌───────────────┐  ┌────────────┐  │
-│  │  MAC Learning │  │  Block     │  │
-│  │  Table        │  │  Rules     │  │
+│  │  MAC Learning │  │   Block    │  │
+│  │  Table        │  │   Rules    │  │
 │  └───────────────┘  └────────────┘  │
 │  ┌──────────────────────────────┐   │
 │  │  FlowLifecycleRecord tracker │   │
@@ -57,8 +57,6 @@ This project implements an **SDN Flow Rule Timeout Manager** that:
      /  |  \               |  \
    h1  h2  h3             h4  h5
 ```
-
-**Key components:**
 
 | File | Purpose |
 |------|---------|
@@ -88,39 +86,6 @@ This project implements an **SDN Flow Rule Timeout Manager** that:
 
 ## How It Works
 
-### Flow Rule Lifecycle
-
-```
-packet_in received
-       │
-       ▼
-MAC learned / looked up
-       │
-  dst known?
-  ┌────┴────┐
- YES        NO → FLOOD (no rule installed)
-  │
-  ▼
-Detect L4 protocol
-  ├─ TCP  → idle=10s, hard=60s
-  ├─ UDP  → idle=10s, hard=60s
-  └─ Other → idle=30s, hard=0 (no hard limit)
-       │
-       ▼
-OFPFlowMod sent with OFPFF_SEND_FLOW_REM flag
-       │
-  [traffic flows normally through switch]
-       │
-  idle timeout fires?  OR  hard timeout fires?
-       │                          │
-       ▼                          ▼
-  EventOFPFlowRemoved         EventOFPFlowRemoved
-  reason=IDLE_TIMEOUT         reason=HARD_TIMEOUT
-       │
-       ▼
-FlowLifecycleRecord updated → written to /tmp/flow_records.json
-```
-
 ### Timeout Constants
 
 | Constant | Value | Applied to |
@@ -130,6 +95,14 @@ FlowLifecycleRecord updated → written to /tmp/flow_records.json
 | `HARD_TIMEOUT_MAX` | 60 s | TCP and UDP flows |
 | Block rules | 0 / 0 | Persistent (never expire) |
 
+### Flow Rule Lifecycle
+
+1. **packet_in** arrives → MAC learned, destination looked up
+2. If destination known → flow installed with `OFPFF_SEND_FLOW_REM` and per-protocol timeouts
+3. Switch forwards traffic in the data plane
+4. Idle or hard timeout fires → switch sends **FLOW_REMOVED** to controller
+5. Controller logs removal reason, duration, and packet count to `/tmp/flow_records.json`
+
 ---
 
 ## Setup & Execution
@@ -137,14 +110,8 @@ FlowLifecycleRecord updated → written to /tmp/flow_records.json
 ### Prerequisites
 
 ```bash
-# Install Mininet
-sudo apt-get install mininet
-
-# Install Ryu
+sudo apt-get install mininet iperf3
 pip install ryu
-
-# (Optional) Install iperf3 for throughput tests
-sudo apt-get install iperf3
 ```
 
 ### 1. Start the Ryu Controller
@@ -153,30 +120,15 @@ sudo apt-get install iperf3
 ryu-manager timeout_manage_controller.py
 ```
 
-> The controller listens on port 6653 by default.
-
-### 2. Launch the Mininet Topology
-
-In a **separate terminal**:
+### 2. Launch the Topology (separate terminal)
 
 ```bash
 sudo python3 topology.py
 ```
 
-This automatically runs:
-- Scenario 1 (allowed vs blocked traffic)
-- Scenario 2 (timeout lifecycle demo)
-- Regression test suite (3 rounds)
+This automatically runs Scenario 1, Scenario 2, and the regression suite.
 
-To open an interactive Mininet CLI after tests:
-
-```bash
-sudo python3 topology.py --cli
-```
-
-### 3. Run the Validation Suite (optional)
-
-In a third terminal while Mininet is still running:
+### 3. Validate (optional, while Mininet is running)
 
 ```bash
 sudo python3 validate.py
@@ -185,16 +137,18 @@ sudo python3 validate.py
 ### Useful Manual Commands
 
 ```bash
-# Dump flow table on s1
+# Dump flow table
 ovs-ofctl -O OpenFlow13 dump-flows s1
 
-# Ping from h1 to h4
-mininet> h1 ping h4
+# Ping test
+mininet> h1 ping -c 4 h4
 
-# iperf3 throughput test
+# Throughput test
 mininet> h4 iperf3 -s &
-mininet> h1 iperf3 -c 10.0.0.4 -t 20
+mininet> h1 iperf3 -c 10.0.0.4 -t 20 -i 5
 ```
+
+> **Note:** To enable host blocking, set `BLOCKED_HOSTS = ['10.0.0.3']` in the controller *before* starting Ryu. Block rules are installed at switch-connect time.
 
 ---
 
@@ -202,98 +156,79 @@ mininet> h1 iperf3 -c 10.0.0.4 -t 20
 
 ### Scenario 1 – Allowed vs Blocked Traffic
 
-Tests that traffic forwarding works normally, and that the host configured in `BLOCKED_HOSTS` has its packets silently dropped.
-
-**Expected result:**
-- `h1 → h4`: ping succeeds, forwarding flow installed with `idle_timeout=10s`
-- `h3 → h4`: 0 packets received (drop rule, highest priority)
+- `h1 → h4`: ping succeeds, forwarding flow installed with `idle_timeout=30s`
+- `h3 → h4`: dropped if `BLOCKED_HOSTS` is populated before controller startup
 
 ### Scenario 2 – Flow Rule Timeout Lifecycle
 
-Demonstrates the complete birth-to-death lifecycle of a flow:
-
-1. Ping `h1 → h4` → flow installed
-2. Wait 15 s (idle_timeout = 10 s) → flow removed, `FLOW_REMOVED` logged
-3. Re-ping → new flow installed (proves rules are re-learned)
-4. Run `iperf3` for 25 s → flow kept alive by traffic, eventually hits `hard_timeout=60s`
+1. Ping `h1 → h4` → flow installed, visible in `ovs-ofctl dump-flows`
+2. Wait 15 s → flow removed, `FLOW_REMOVED` logged with `reason=IDLE_TIMEOUT`
+3. Re-ping → new flow installed (proves rules are re-learned after expiry)
+4. Run `iperf3` for 25 s → flow kept alive by traffic until `hard_timeout=60s`
 
 ---
 
-## Validation & Regression Testing
+## Regression Testing
 
-`validate.py` performs five checks:
+Three independent rounds each install a flow, wait `idle_timeout + 5 s`, then check the OVS table. All rounds must show the forwarding rule absent within the expected window.
 
-| Test | What it checks |
-|------|----------------|
-| Flow table structure | OVS reachable, table-miss rule installed |
-| Idle timeout values | Installed flows carry expected `idle_timeout` values |
-| Lifecycle records | Every idle-expired flow removed within `idle_to + 6s` window |
-| Block rule enforcement | h3 → h4 ping returns 0 packets |
-| Regression consistency | Max variance across all idle-expired durations ≤ 6 s |
+**Result: PASS=3, FAIL=0** — all flows removed at ~16 s (expected 10 s ± 5 s).
 
 ---
 
 ## Proof of Execution
 
-### Flow Table (after initial ping)
-
-> _Screenshot placeholder – paste your `ovs-ofctl dump-flows s1` output here_
-
-![Flow table after ping](screenshots/flow_table_after_ping.png)
-
----
-
 ### Scenario 1 – Ping Results
 
-> _Screenshot placeholder – terminal showing h1→h4 success and h3→h4 blocked_
+![Scenario 1](screenshots/1.png)
 
-![Scenario 1 ping results](screenshots/scenario1_ping.png)
-
----
-
-### Scenario 2 – Timeout Lifecycle Logs
-
-> _Screenshot placeholder – controller log showing FLOW INSTALLED → FLOW REMOVED (IDLE_TIMEOUT)_
-
-![Timeout lifecycle log](screenshots/scenario2_timeout_log.png)
+h1→h4: 4/4 packets received. h3→h4 was not blocked because `BLOCKED_HOSTS` was empty at runtime — block rules must be configured before controller startup.
 
 ---
 
-### iperf3 Throughput Results
+### Scenario 2 – Flow Table & Idle Timeout (Steps 1–2)
 
-> _Screenshot placeholder – iperf3 client output from h1_
+![Scenario 2 Steps 1-2](screenshots/2.png)
 
-![iperf3 results](screenshots/iperf3_results.png)
-
----
-
-### Validation Suite Output
-
-> _Screenshot placeholder – validate.py final report showing PASS/FAIL per test_
-
-![Validation output](screenshots/validate_output.png)
+Flow table after initial ping shows `idle_timeout=30, send_flow_rem`. After 15 s the controller confirms forwarding flows were removed by idle timeout ✓
 
 ---
 
-### Wireshark Capture (optional)
+### Scenario 2 – Re-ping & iperf3 (Steps 3–4)
 
-> _Screenshot placeholder – Wireshark capture showing OpenFlow PACKET_IN / FLOW_MOD / FLOW_REMOVED messages_
+![Scenario 2 Steps 3-4](screenshots/3.png)
 
-![Wireshark capture](screenshots/wireshark_openflow.png)
+New flows installed after re-ping ✓. iperf3 was not installed in this environment — install with `sudo apt-get install iperf3`.
+
+---
+
+### Controller Log – MAC Learning & FLOW_REMOVED
+
+![Controller log](screenshots/4.png)
+
+Shows SWITCH CONNECTED → table-miss installed, MAC addresses learned, FLOW INSTALLED records with `idle=30s hard=0s`, and a FLOW REMOVED event with `reason=IDLE_TIMEOUT duration=35.6s`.
+
+---
+
+### Regression Suite – All Rounds PASS
+
+![Regression tests](screenshots/5.png)
+
+All 3 regression rounds passed. PASS=3 FAIL=0. All scenarios complete.
 
 ---
 
 ## References
 
-1. OpenFlow Switch Specification, Version 1.3.0 – Open Networking Foundation  
+1. Open Networking Foundation. *OpenFlow Switch Specification, Version 1.3.0*, 2012.  
    https://opennetworking.org/wp-content/uploads/2014/10/openflow-spec-v1.3.0.pdf
 
-2. Ryu SDN Framework Documentation  
+2. Ryu SDN Framework. *Ryu Documentation*.  
    https://ryu.readthedocs.io/en/latest/
 
-3. Mininet Documentation  
+3. Mininet Project. *Mininet: An Instant Virtual Network on your Laptop*.  
    http://mininet.org/
 
-4. B. Lantz, B. Heller, N. McKeown – "A Network in a Laptop: Rapid Prototyping for Software-Defined Networks", HotNets '10
+4. B. Lantz, B. Heller, N. McKeown. "A Network in a Laptop: Rapid Prototyping for Software-Defined Networks." *HotNets '10*, 2010.
 
-5. N. McKeown et al. – "OpenFlow: Enabling Innovation in Campus Networks", ACM SIGCOMM CCR, 2008
+5. N. McKeown et al. "OpenFlow: Enabling Innovation in Campus Networks." *ACM SIGCOMM Computer Communication Review*, 38(2):69–74, 2008.
