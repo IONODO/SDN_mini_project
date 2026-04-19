@@ -180,7 +180,7 @@ Three independent rounds each install a flow, wait `idle_timeout + 5 s`, then ch
 
 ### Scenario 1 – Ping Results
 
-![Scenario 1](screenshots/1.png)
+![Scenario 1](Screenshots/1.png)
 
 h1→h4: 4/4 packets received. h3→h4 was not blocked because `BLOCKED_HOSTS` was empty at runtime — block rules must be configured before controller startup.
 
@@ -188,7 +188,7 @@ h1→h4: 4/4 packets received. h3→h4 was not blocked because `BLOCKED_HOSTS` w
 
 ### Scenario 2 – Flow Table & Idle Timeout (Steps 1–2)
 
-![Scenario 2 Steps 1-2](screenshots/2.png)
+![Scenario 2 Steps 1-2](Screenshots/2.png)
 
 Flow table after initial ping shows `idle_timeout=30, send_flow_rem`. After 15 s the controller confirms forwarding flows were removed by idle timeout ✓
 
@@ -196,7 +196,7 @@ Flow table after initial ping shows `idle_timeout=30, send_flow_rem`. After 15 s
 
 ### Scenario 2 – Re-ping & iperf3 (Steps 3–4)
 
-![Scenario 2 Steps 3-4](screenshots/3.png)
+![Scenario 2 Steps 3-4](Screenshots/3.png)
 
 New flows installed after re-ping ✓. iperf3 was not installed in this environment — install with `sudo apt-get install iperf3`.
 
@@ -204,7 +204,7 @@ New flows installed after re-ping ✓. iperf3 was not installed in this environm
 
 ### Controller Log – MAC Learning & FLOW_REMOVED
 
-![Controller log](screenshots/4.png)
+![Controller log](Screenshots/4.png)
 
 Shows SWITCH CONNECTED → table-miss installed, MAC addresses learned, FLOW INSTALLED records with `idle=30s hard=0s`, and a FLOW REMOVED event with `reason=IDLE_TIMEOUT duration=35.6s`.
 
@@ -212,7 +212,7 @@ Shows SWITCH CONNECTED → table-miss installed, MAC addresses learned, FLOW INS
 
 ### Regression Suite – All Rounds PASS
 
-![Regression tests](screenshots/5.png)
+![Regression tests](Screenshots/5.png)
 
 All 3 regression rounds passed. PASS=3 FAIL=0. All scenarios complete.
 
